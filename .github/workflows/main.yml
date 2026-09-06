@@ -1,4 +1,4 @@
-name: Linux
+name: Linux Terminal
 
 on:
   workflow_dispatch:
@@ -11,26 +11,23 @@ jobs:
       - name: Install XFCE Desktop and XRDP Server
         run: |
           sudo apt-get update
-          # Instalamos XFCE (ligero y rápido) y el servidor XRDP
           sudo apt-get install -y xfce4 xfce4-goodies xrdp
           
           # Configuramos XRDP para que use XFCE por defecto
           echo "xfce4-session" > ~/.xsession
           sudo sed -i.bak '/fi/a xfce4-session' /etc/xrdp/startwm.sh
           
-          # Reiniciamos y habilitamos el servicio XRDP
+          # Reiniciamos el servicio XRDP
           sudo systemctl restart xrdp
 
       - name: Create Secure Desktop User
         run: |
-          # Generamos una contraseña segura aleatoria para el usuario 'rdpuser'
           PASSWORD=$(openssl rand -base64 12)
           sudo useradd -m -s /bin/bash rdpuser
           echo "rdpuser:$PASSWORD" | sudo chpasswd
           sudo usermod -aG sudo rdpuser
           
           echo "RDP_PASSWORD=$PASSWORD" >> $GITHUB_ENV
-          echo "RDP User created successfully."
 
       - name: Install Tailscale
         run: |
@@ -38,10 +35,8 @@ jobs:
 
       - name: Establish Tailscale Connection
         run: |
-          # Conectamos Tailscale a tu red privada
           sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-linux-rdp-$GITHUB_RUN_ID
           
-          # Obtenemos la IP de Tailscale
           TS_IP=$(tailscale ip -4)
           if [ -z "$TS_IP" ]; then
             echo "Error: Tailscale IP not assigned."
