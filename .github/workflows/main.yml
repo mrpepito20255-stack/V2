@@ -1,4 +1,4 @@
-name: Linux Mint Desktop on Tailscale
+name: Linux Mint Desktop on Tailscale  ee
 
 on:
   workflow_dispatch:
