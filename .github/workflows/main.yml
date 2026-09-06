@@ -1,0 +1,70 @@
+name: Linux Mint Desktop on Tailscale
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-linux-desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3600
+    steps:
+      - name: Install Desktop Environment and VNC Server
+        run: |
+          sudo apt-get update
+          # Instalamos XFCE (idéntico en ligereza y estilo al que usa Linux Mint) y TigerVNC
+          sudo apt-get install -y xfce4 xfce4-goodies tigervnc-standalone-server tigervnc-common dbus-x11
+          
+          # Configuramos el arranque del entorno gráfico
+          mkdir -p ~/.vnc
+          echo "#!/bin/sh" > ~/.vnc/xstartup
+          echo "unset SESSION_MANAGER" >> ~/.vnc/xstartup
+          echo "unset DBUS_SESSION_BUS_ADDRESS" >> ~/.vnc/xstartup
+          echo "startxfce4 &" >> ~/.vnc/xstartup
+          chmod +x ~/.vnc/xstartup
+
+      - name: Create Secure VNC Password
+        run: |
+          PASSWORD=$(openssl rand -base64 12)
+          mkdir -p ~/.vnc
+          echo "$PASSWORD" | vncpasswd -f > ~/.vnc/passwd
+          chmod 600 ~/.vnc/passwd
+          
+          echo "VNC_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+
+      - name: Install Tailscale
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sh
+
+      - name: Establish Tailscale Connection
+        run: |
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-linux-mint-$GITHUB_RUN_ID
+          
+          TS_IP=$(tailscale ip -4)
+          if [ -z "$TS_IP" ]; then
+            echo "Error: Tailscale IP not assigned."
+            exit 1
+          fi
+          echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
+          echo "Tailscale IP assigned: $TS_IP"
+
+      - name: Start VNC Server
+        run: |
+          vncserver :1 -geometry 1280x720 -depth 24
+          echo "VNC Server started on port 5901."
+
+      - name: Verify Connectivity
+        run: |
+          nc -zvw3 localhost 5901 || exit 1
+          echo "VNC Port 5901 is active and listening!"
+
+      - name: Maintain Connection
+        run: |
+          echo "=== LINUX DESKTOP ACCESS ==="
+          echo "Address: ${{ env.TAILSCALE_IP }}:5901"
+          echo "Password: ${{ env.VNC_PASSWORD }}"
+          echo "============================"
+          
+          while true; do
+            echo "[$(date)] Linux Desktop Active - Use GitHub Actions UI to cancel."
+            sleep 300
+          done
