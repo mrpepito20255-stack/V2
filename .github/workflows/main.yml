@@ -1,39 +1,36 @@
-name: Linux Mint Desktop
+name: Linux
 
 on:
   workflow_dispatch:
 
 jobs:
-  secure-linux-desktop:
+  secure-linux-rdp:
     runs-on: ubuntu-latest
     timeout-minutes: 3600
     steps:
-      - name: Install Desktop Environment and VNC Server
+      - name: Install XFCE Desktop and XRDP Server
         run: |
           sudo apt-get update
-          sudo apt-get install -y xfce4 xfce4-goodies tigervnc-standalone-server tigervnc-common dbus-x11 x11-xserver-utils
+          # Instalamos XFCE (ligero y rápido) y el servidor XRDP
+          sudo apt-get install -y xfce4 xfce4-goodies xrdp
           
-          # Limpiar y preparar el directorio de configuración VNC
-          rm -rf ~/.vnc
-          mkdir -p ~/.vnc
+          # Configuramos XRDP para que use XFCE por defecto
+          echo "xfce4-session" > ~/.xsession
+          sudo sed -i.bak '/fi/a xfce4-session' /etc/xrdp/startwm.sh
           
-          # Crear el archivo xstartup corregido para evitar cierres prematuros
-          echo '#!/bin/sh' > ~/.vnc/xstartup
-          echo 'unset SESSION_MANAGER' >> ~/.vnc/xstartup
-          echo 'unset DBUS_SESSION_BUS_ADDRESS' >> ~/.vnc/xstartup
-          echo 'exec startxfce4' >> ~/.vnc/xstartup
-          
-          # Dar permisos de ejecución
-          chmod +x ~/.vnc/xstartup
+          # Reiniciamos y habilitamos el servicio XRDP
+          sudo systemctl restart xrdp
 
-      - name: Create Secure VNC Password
+      - name: Create Secure Desktop User
         run: |
+          # Generamos una contraseña segura aleatoria para el usuario 'rdpuser'
           PASSWORD=$(openssl rand -base64 12)
-          mkdir -p ~/.vnc
-          echo "$PASSWORD" | vncpasswd -f > ~/.vnc/passwd
-          chmod 600 ~/.vnc/passwd
+          sudo useradd -m -s /bin/bash rdpuser
+          echo "rdpuser:$PASSWORD" | sudo chpasswd
+          sudo usermod -aG sudo rdpuser
           
-          echo "VNC_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+          echo "RDP_PASSWORD=$PASSWORD" >> $GITHUB_ENV
+          echo "RDP User created successfully."
 
       - name: Install Tailscale
         run: |
@@ -41,8 +38,10 @@ jobs:
 
       - name: Establish Tailscale Connection
         run: |
-          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-linux-mint-$GITHUB_RUN_ID
+          # Conectamos Tailscale a tu red privada
+          sudo tailscale up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-linux-rdp-$GITHUB_RUN_ID
           
+          # Obtenemos la IP de Tailscale
           TS_IP=$(tailscale ip -4)
           if [ -z "$TS_IP" ]; then
             echo "Error: Tailscale IP not assigned."
@@ -51,25 +50,20 @@ jobs:
           echo "TAILSCALE_IP=$TS_IP" >> $GITHUB_ENV
           echo "Tailscale IP assigned: $TS_IP"
 
-      - name: Start VNC Server
+      - name: Verify RDP Port
         run: |
-          vncserver -kill :1 || true
-          vncserver :1 -geometry 1280x720 -depth 24
-          echo "VNC Server started on port 5901."
-
-      - name: Verify Connectivity
-        run: |
-          nc -zvw3 localhost 5901 || exit 1
-          echo "VNC Port 5901 is active and listening!"
+          nc -zvw3 localhost 3389 || exit 1
+          echo "RDP Port 3389 is active and listening!"
 
       - name: Maintain Connection
         run: |
-          echo "=== LINUX DESKTOP ACCESS ==="
-          echo "Address: ${{ env.TAILSCALE_IP }}:5901"
-          echo "Password: ${{ env.VNC_PASSWORD }}"
-          echo "============================"
+          echo "=== LINUX RDP ACCESS ==="
+          echo "Address (IP): ${{ env.TAILSCALE_IP }}"
+          echo "Username: rdpuser"
+          echo "Password: ${{ env.RDP_PASSWORD }}"
+          echo "========================"
           
           while true; do
-            echo "[$(date)] Linux Desktop Active - Use GitHub Actions UI to cancel."
+            echo "[$(date)] Linux RDP Active - Use GitHub Actions UI to cancel."
             sleep 300
           done
